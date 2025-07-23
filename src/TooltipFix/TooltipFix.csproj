@@ -1,19 +1,25 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
     <PropertyGroup>
-        <TargetFramework>net7.0-windows</TargetFramework>
-        <Nullable>disable</Nullable>
+        <TargetFramework>net9.0-windows</TargetFramework>
+        <Nullable>enable</Nullable>
         <ImplicitUsings>enable</ImplicitUsings>
         <LangVersion>latest</LangVersion>
-        <EnableWindowsTargeting>true</EnableWindowsTargeting>
-        <RuntimeIdentifier>win-x86</RuntimeIdentifier>
         <RootNamespace>Dawn.Apps.TooltipFix</RootNamespace>
-        <UseWindowsForms>true</UseWindowsForms>
-        <Company>JustArion</Company>
-        <Product>Tooltip Fix Service</Product>
-        <AssemblyVersion>1.5</AssemblyVersion>
-        <FileVersion>1.5</FileVersion>
         <OutputType>WinExe</OutputType>
+    </PropertyGroup>
+    
+    <PropertyGroup Label="Publish Properties">
+        <PublishSingleFile>true</PublishSingleFile>
+        <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+        <SelfContained>false</SelfContained>
+    </PropertyGroup>
+
+    <PropertyGroup Label="Versioning">
+        <Version>1.6</Version>
+
+        <AssemblyVersion>$(Version)</AssemblyVersion>
+        <ProductVersion>$Version)</ProductVersion>
     </PropertyGroup>
 
     <PropertyGroup Condition=" '$(Configuration)' == 'Debug' ">
@@ -26,10 +32,11 @@
 
     <ItemGroup>
         <PackageReference Include="Interop.UIAutomationClient.Signed" Version="10.19041.0" />
-        <PackageReference Include="Serilog.Enrichers.Process" Version="2.0.2" />
-        <PackageReference Include="Serilog.Sinks.Console" Version="4.1.0" />
-        <PackageReference Include="Serilog.Sinks.Seq" Version="5.2.2" />
-        <PackageReference Include="Vanara.PInvoke.Kernel32" Version="3.4.16" />
-        <PackageReference Include="Vanara.PInvoke.User32" Version="3.4.15" />
+        <PackageReference Include="Serilog.Enrichers.Process" Version="3.0.0" />
+        <PackageReference Include="Serilog.Sinks.Console" Version="6.0.0" />
+        <PackageReference Include="Serilog.Sinks.Console.LogThemes" Version="0.3.0" />
+        <PackageReference Include="Serilog.Sinks.Seq" Version="9.0.0" />
+        <PackageReference Include="TaskScheduler" Version="2.12.2" />
+        <PackageReference Include="Vanara.PInvoke.User32" Version="4.1.6" />
     </ItemGroup>
 </Project>
