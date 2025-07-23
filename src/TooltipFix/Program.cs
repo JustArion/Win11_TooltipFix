@@ -1,30 +1,65 @@
 using System.ComponentModel;
+using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
-using Serilog;
+using Dawn.Apps.TooltipFix.Serilog;
 using Dawn.Apps.TooltipFix.Serilog.CustomEnrichers;
 using Interop.UIAutomationClient;
+using Serilog;
 using Serilog.Events;
-using MessageBox = System.Windows.Forms.MessageBox;
+
+namespace Dawn.Apps.TooltipFix;
 
 internal static class Program
 {
-    [STAThread]
-    internal static void Main()
+    private static LaunchArgs Arguments;
+    
+    [SuppressMessage("ReSharper", "SwitchStatementHandlesSomeKnownEnumValuesWithDefault")]
+    internal static void Main(string[] args)
     {
-        FreeConsole();
         var isWin11 = Environment.OSVersion.Version is { Major: >= 10, Minor: >= 0, Build: >= 22000 };
-        if (!isWin11)
-        {
-            MessageBox.Show("This program is only compatible with Windows 11.", "Tooltip Fix", MessageBoxButtons.OK, MessageBoxIcon.Error);
-            Environment.Exit(1);
-        }
+        if (!isWin11) 
+            ExecuteAndExit(() => MessageBox(0, "This program is only compatible with Windows 11.", "Tooltip Fix", MB_FLAGS.MB_ICONERROR | MB_FLAGS.MB_OK), 1);
+
+        Arguments = new(args);
 
         InitializeConsole();
+        if (Arguments.IsInteractive)
+        {
+            var sb = new StringBuilder();
+            sb.AppendLine("The Tooltip Fix will automatically start when Windows starts.");
+            sb.AppendLine();
+            sb.AppendLine("If you want to run it as admin, restart the program as admin (Task Manager needs admin to apply Tooltip Fixes to it)");
+            sb.AppendLine();
+            sb.AppendLine();
+            sb.AppendLine("Yes       - Runs the program.");
+            sb.AppendLine("No       - Removes automatic startup & closes.");
+            sb.AppendLine("Cancel - Closes the program.");
+            
+            var result = MessageBox(0, sb.ToString(), 
+                "Tooltip Fix", MB_FLAGS.MB_YESNOCANCEL | MB_FLAGS.MB_TOPMOST);
+
+            switch (result)
+            {
+
+                case MB_RESULT.IDNO:
+                    ExecuteAndExit(TooltipTaskScheduler.TryRemove);
+                    break;
+                case MB_RESULT.IDYES:
+                    TooltipTaskScheduler.Update();
+                break;
+                case MB_RESULT.IDCANCEL:
+                default:
+                    ExecuteAndExit();
+                    return;
+            }
+        }
+
         try
         {
 
+            Log.Information("Running Tooltip Fix");
             InitializeWinEventHook();
 
             RunMessageLoop();
@@ -40,6 +75,13 @@ internal static class Program
 
     }
 
+    private static void ExecuteAndExit(Action? act = null, int exitCode = 0)
+    {
+        act?.Invoke();
+        Log.Information("Exiting... Goodbye!");
+        Environment.Exit(exitCode);
+    }
+
     private static void RunMessageLoop()
     {
         while (GetMessage(out var msg) > 0)
@@ -49,31 +91,67 @@ internal static class Program
         }
     }
 
+    private static void OpenConsole()
+    {
+        AttachConsole(ATTACH_PARENT_PROCESS);
+        
+        var stdOut = Console.OpenStandardOutput();
+        var stdErr = Console.OpenStandardError();
+
+        var outWriter = new StreamWriter(stdOut) { AutoFlush = true };
+        var errorWriter = new StreamWriter(stdErr) { AutoFlush = true };
+        
+        Console.SetOut(outWriter);
+        Console.SetError(errorWriter);
+        
+        Console.WriteLine();
+    }
+    
+    #if RELEASE
+    private const string DEFAULT_SEQ_URL = "http://localhost:9999";
+    #endif
     private static void InitializeConsole()
     {
-        Log.Logger = new LoggerConfiguration()
+        const string LOGGING_FORMAT = "{Level:u1} {Timestamp:yyyy-MM-dd HH:mm:ss.ffffff}   [{Source}] {Message:lj}{NewLine}{Exception}";
+        
+        OpenConsole();
+
+        var config = new LoggerConfiguration()
+            .MinimumLevel.Verbose()
             .Enrich.WithClassName()
-            #if DEBUG
-            .MinimumLevel.Is(LogEventLevel.Verbose)
-            #else
-            .MinimumLevel.Is(LogEventLevel.Information)
-            #endif
-            .WriteTo.Console(outputTemplate: "{Level:u1} {Timestamp:yyyy-MM-dd HH:mm:ss.ffffff} [{Source}] {Message:lj}{NewLine}{Exception}")
             .Enrich.WithProcessName()
             .Enrich.FromLogContext()
-            .WriteTo.Seq("http://localhost:9999")
-            .CreateLogger();
+            .WriteTo.Console(outputTemplate: LOGGING_FORMAT, theme: SerilogBlizzardTheme.GetTheme,
+                applyThemeToRedirectedOutput: true, standardErrorFromLevel: LogEventLevel.Error);
+
+
+        var logPath = Path.Combine(AppContext.BaseDirectory, "TooltipFix.log");
+        if (!Arguments.NoFileLogging)
+            config.WriteTo.File(logPath,
+                outputTemplate: LOGGING_FORMAT,
+                restrictedToMinimumLevel: Arguments.ExtendedLogging
+                    ? LogEventLevel.Verbose
+                    : LogEventLevel.Information,
+                buffered: true,
+                retainedFileCountLimit: 1,
+                rollOnFileSizeLimit: true,
+                fileSizeLimitBytes: (long)Math.Pow(1024, 2) * 20, flushToDiskInterval // 20mb
+                : TimeSpan.FromSeconds(1));
+
+
+        #if RELEASE
+            // This is personal preference, but you can set your Seq server to catch :9999 too.
+            // (Logs to nowhere if there's no Seq server listening on port 9999
+            config.WriteTo.Seq(Arguments.HasCustomSeqUrl
+                    ? Arguments.CustomSeqUrl
+                    : DEFAULT_SEQ_URL,
+                restrictedToMinimumLevel: LogEventLevel.Information);
+        #endif
+
+        Log.Logger = config.CreateLogger();
 
         
         AppDomain.CurrentDomain.UnhandledException += (_, eo) => Log.Error(eo.ExceptionObject as Exception, "Unhandled Exception");
-        
-        var attached = AttachConsole(ATTACH_PARENT_PROCESS);
-        if (!attached)
-        {
-            // On Some PCs a shadow console is created. We need to free it.
-            FreeConsole();
-            return;
-        }
 
         Log.Information("Tooltip Fix Initialized");
     }
@@ -86,17 +164,17 @@ internal static class Program
     private static void InitializeWinEventHook()
     {
         
-        Callback ??= WinHookCallback;
+        _winEventCallback ??= WinHookCallback;
         
-        /// If we pass 'WinHookCallback' as an implicit cast to a delegate, the GC may in some cases may collect it.
-        /// So we need to keep a reference to it.
-        GC.KeepAlive(Callback);
+        // If we pass 'WinHookCallback' as an implicit cast to a delegate, the GC may in some cases may collect it.
+        // So we need to keep a reference to it.
+        GC.KeepAlive(_winEventCallback);
 
-        #if DEBUG
+    #if DEBUG
         _hHook = InitializeOnPID(_DebugProcessID);
-        #else
+    #else
         _hHook = InitializeOnPID(0);
-        #endif
+    #endif
 
         if (!_hHook.IsNull)
             return;
@@ -108,29 +186,29 @@ internal static class Program
         SetWinEventHook(EventConstants.EVENT_OBJECT_SHOW,
             EventConstants.EVENT_OBJECT_SHOW, 
             nint.Zero, 
-            Callback, pid, 0,
+            _winEventCallback!, pid, 0,
             WINEVENT.WINEVENT_OUTOFCONTEXT);
 
 
-    private static WinEventProc Callback;
-    private const int _Xaml_WindowedPopupClass_StringLength = 23;
-    private static readonly StringBuilder _StringBuilder = new(_Xaml_WindowedPopupClass_StringLength + 1); // Xaml_WindowedPopupClass + Null Terminator
+    private static WinEventProc? _winEventCallback = WinHookCallback;
+    private const int Xaml_WindowedPopupClass_StringLength = 23;
+    private static readonly StringBuilder _stringBuilder = new(Xaml_WindowedPopupClass_StringLength + 1); // Xaml_WindowedPopupClass + Null Terminator
     private static void WinHookCallback(HWINEVENTHOOK hWinEventHook, uint winEvent, HWND hwnd, int idObject, int idChild, uint dwEventThread, uint dwmsEventTime)
     {
         try
         {
             try
             {
-                var classNameLength = GetClassName(hwnd, _StringBuilder, _StringBuilder.Capacity);
-                if (classNameLength != _Xaml_WindowedPopupClass_StringLength)
+                var classNameLength = GetClassName(hwnd, _stringBuilder, _stringBuilder.Capacity);
+                if (classNameLength != Xaml_WindowedPopupClass_StringLength)
                     return; // We save some time by comparing the length first. The majority of windows are not tooltips.
                 
-                if (_StringBuilder.ToString() is not "Xaml_WindowedPopupClass") 
+                if (_stringBuilder.ToString() is not "Xaml_WindowedPopupClass") 
                     return;
             }
             finally
             {
-                _StringBuilder.Clear();
+                _stringBuilder.Clear();
             }
 
             if (!IsTooltip(hwnd))
@@ -144,10 +222,10 @@ internal static class Program
         }
         // If the Handle is disposed while we work with it, we don't care.
         catch (Win32Exception) { }
-        catch (Exception e) { Log.Logger.Error(e, "Unknown Error"); }
+        catch (Exception e) { Log.Error(e, "Unknown Error"); }
     }
     
-    private static readonly CUIAutomationClass _Automation = new();
+    private static readonly CUIAutomationClass _automation = new();
     
     /// <code>
     /// This is the general structure we look for.
@@ -161,12 +239,12 @@ internal static class Program
         try
         {
             if (hwnd.IsNull) return false;
-            var element = _Automation.ElementFromHandle(hwnd.DangerousGetHandle());
+            var element = _automation.ElementFromHandle(hwnd.DangerousGetHandle());
             
             if (element is not { CurrentFrameworkId: "XAML" }) 
                 return false;
 
-            var popup = element.FindFirst(TreeScope.TreeScope_Children, _Automation.ControlViewCondition);
+            var popup = element.FindFirst(TreeScope.TreeScope_Children, _automation.ControlViewCondition);
             if (popup is null)
                 return false;
 
@@ -174,7 +252,7 @@ internal static class Program
             Log.Debug("'{CurrentElementClassName}' - '{CurrentElementName}' - '{CurrentPopupClassName}' - '{CurrentPopupName}'", 
                 element.CurrentClassName, element.CurrentName, popup.CurrentClassName, popup.CurrentName);
             
-            var child = popup.FindFirst(TreeScope.TreeScope_Children, _Automation.ControlViewCondition);
+            var child = popup.FindFirst(TreeScope.TreeScope_Children, _automation.ControlViewCondition);
             if (child is null)
                 return false;
 
@@ -193,23 +271,27 @@ internal static class Program
         catch (NullReferenceException) {}
         catch (COMException e)
         {
+            // (The first constant)
+            // https://learn.microsoft.com/en-us/windows/win32/winauto/uiauto-error-codes
             // An event was unable to invoke any of the subscribers (0x80040201)
             // UIA_E_ELEMENTNOTAVAILABLE
             // The element is ( not / no longer ) available on the UI Automation tree.
-            // The error wouldn't count as a NullRef as the error occurs when we call '_Automation.ElementFromhandle(hwnd);' The method will throw a COM Exception
+            // The error wouldn't count as a NullRef as the error occurs when we call '_automation.ElementFromhandle(hwnd);' The method will throw a COM Exception
             // since from the time we got the handle to the time we called the method, the handle was disposed.
-            if (e.ErrorCode is not -0x7FFBFDFF)
+            if ((uint)e.ErrorCode is not UIA_E_ELEMENTNOTAVAILABLE)
                 HandleError(e);
         }
         catch (Exception e) { HandleError(e); }
         return false;
     }
 
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static void HandleError(Exception e) => Log.Logger.Error(e, "Tooltip Error Handler");
+    private const uint UIA_E_ELEMENTNOTAVAILABLE = 0x80040201;
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static bool IsTransparent(WindowStylesEx style) => style.HasFlag(WindowStylesEx.WS_EX_TRANSPARENT) && style.HasFlag(WindowStylesEx.WS_EX_LAYERED);
+    private static void HandleError(Exception e) => Log.Error(e, "Tooltip Error Handler");
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static bool IsTransparent(WindowStylesEx style) => style.HasFlag(WindowStylesEx.WS_EX_TRANSPARENT | WindowStylesEx.WS_EX_LAYERED);
 
     [MethodImpl(MethodImplOptions.AggressiveInlining | MethodImplOptions.AggressiveOptimization)]
     private static void SetTransparent(HWND hwnd, WindowStylesEx style)
@@ -223,7 +305,7 @@ internal static class Program
         if (retVal != 0 && lastError.Succeeded) 
             return;
 
-        Log.Logger.Error(lastError.GetException(), "Error setting window style");
+        Log.Error(lastError.GetException(), "Error setting window style");
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining | MethodImplOptions.AggressiveOptimization)]
