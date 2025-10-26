@@ -24,7 +24,7 @@ internal static class Program
 
         Arguments = new(args);
 
-        InitializeConsole();
+        InitializeLogging();
         if (Arguments.IsInteractive)
         {
             var sb = new StringBuilder();
@@ -91,7 +91,7 @@ internal static class Program
         }
     }
 
-    private static void OpenConsole()
+    private static void InitializeConsole()
     {
         AttachConsole(ATTACH_PARENT_PROCESS);
         
@@ -110,11 +110,11 @@ internal static class Program
     #if RELEASE
     private const string DEFAULT_SEQ_URL = "http://localhost:9999";
     #endif
-    private static void InitializeConsole()
+    private static void InitializeLogging()
     {
         const string LOGGING_FORMAT = "{Level:u1} {Timestamp:yyyy-MM-dd HH:mm:ss.ffffff}   [{Source}] {Message:lj}{NewLine}{Exception}";
         
-        OpenConsole();
+        InitializeConsole();
 
         var config = new LoggerConfiguration()
             .MinimumLevel.Verbose()
@@ -259,8 +259,8 @@ internal static class Program
             var childName = child.CurrentName;
             if (!string.IsNullOrWhiteSpace(childName))
             {
-                //                                  ToolTip            {ToolTipName}
-                Log.Information("Type: '{CurrentClassName}' - '{CurrentName}'", 
+                //                                  ToolTip               {ToolTipName}
+                Log.Verbose("Type: '{CurrentClassName}' - '{CurrentName}'", 
                     child.CurrentClassName, child.CurrentName);
             }
 

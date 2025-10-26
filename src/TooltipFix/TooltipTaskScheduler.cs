@@ -128,7 +128,7 @@ internal static class TooltipTaskScheduler
         {
             Log.Error(e, "Failed to add task");
         }
-        Log.Information("Added Tooltip Task");
+        Log.Verbose("Added Tooltip Task");
     }
 
     private static void DoTaskSchedulerEditPatch(TaskPrincipal principal)
