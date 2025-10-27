@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
@@ -6,8 +7,10 @@ using System.Text;
 using Dawn.Apps.TooltipFix.Serilog;
 using Dawn.Apps.TooltipFix.Serilog.CustomEnrichers;
 using Interop.UIAutomationClient;
+using NuGet.Versioning;
 using Serilog;
 using Serilog.Events;
+using Velopack;
 
 namespace Dawn.Apps.TooltipFix;
 
@@ -25,6 +28,9 @@ internal static class Program
         Arguments = new(args);
 
         InitializeLogging();
+
+        InitializeVelopackIfNecessary();
+        
         if (Arguments.IsInteractive)
         {
             var sb = new StringBuilder();
@@ -33,28 +39,38 @@ internal static class Program
             sb.AppendLine("If you want to run it as admin, restart the program as admin (Task Manager needs admin to apply Tooltip Fixes to it)");
             sb.AppendLine();
             sb.AppendLine();
-            sb.AppendLine("Yes       - Runs the program.");
-            sb.AppendLine("No       - Removes automatic startup & closes.");
-            sb.AppendLine("Cancel - Closes the program.");
+            sb.AppendLine("Yes         - Runs the program as admin.");
+            sb.AppendLine("No         - Runs the program normally");
+            sb.AppendLine("Cancel   - Removes automatic startup & closes.");
             
-            var result = MessageBox(0, sb.ToString(), 
-                "Tooltip Fix", MB_FLAGS.MB_YESNOCANCEL | MB_FLAGS.MB_TOPMOST);
+            var result = MessageBox(0, sb.ToString(), "Tooltip Fix", MB_FLAGS.MB_YESNOCANCEL | MB_FLAGS.MB_TOPMOST);
 
             switch (result)
             {
-
-                case MB_RESULT.IDNO:
-                    ExecuteAndExit(TooltipTaskScheduler.TryRemove);
-                    break;
                 case MB_RESULT.IDYES:
+                    ExecuteAndExit(()=> Process.Start(new ProcessStartInfo
+                    {
+                        FileName = Environment.ProcessPath,
+                        ArgumentList =
+                        {
+                            LaunchArgs.Keys.HEADLESS_KEY,
+                            LaunchArgs.Keys.MANUALLY_ELEVATED_KEY
+                        },
+                        Verb = "runas",
+                        UseShellExecute = true
+                    }));
+                    break;
+                case MB_RESULT.IDNO:
                     TooltipTaskScheduler.Update();
-                break;
+                    break;
                 case MB_RESULT.IDCANCEL:
                 default:
-                    ExecuteAndExit();
+                    ExecuteAndExit(TooltipTaskScheduler.TryRemove);
                     return;
             }
         }
+        else if (Arguments.ManuallyElevated) 
+            TooltipTaskScheduler.Update();
 
         try
         {
@@ -73,6 +89,13 @@ internal static class Program
             Log.CloseAndFlush();
         }
 
+    }
+
+    private static void InitializeVelopackIfNecessary()
+    {
+        var app = VelopackApp.Build();
+        app.OnBeforeUninstallFastCallback(_ => TooltipTaskScheduler.TryRemove());
+        app.Run();
     }
 
     private static void ExecuteAndExit(Action? act = null, int exitCode = 0)
