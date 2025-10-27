@@ -4,4 +4,4 @@
 
 - Reduced log level of various items.
 - Added Velopack as the installer for non-portable versions
-    - Apps are installed to %AppData%/Local/Tooltip_Fix
+    - Apps are installed to %AppData%/Local/TooltipFix
