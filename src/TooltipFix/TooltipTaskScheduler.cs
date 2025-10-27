@@ -8,7 +8,6 @@ namespace Dawn.Apps.TooltipFix;
 
 internal static class TooltipTaskScheduler
 {
-    private static bool IsAdmin()=> new WindowsPrincipal(WindowsIdentity.GetCurrent()).IsInRole(WindowsBuiltInRole.Administrator);
     private const string KEY = "Win11_TooltipFix";
     private static TaskService TaskService => TaskService.Instance;
     
@@ -47,7 +46,7 @@ internal static class TooltipTaskScheduler
 
         task.Enabled = true;
         var definition = task.Definition;
-        var isAdmin = IsAdmin();
+        var isAdmin = LaunchArgs.IsAdmin();
 
         var principal = definition.Principal;
         // The task is admin but we're not (I.E We can't edit this task)
@@ -86,7 +85,7 @@ internal static class TooltipTaskScheduler
         
         if (definition.Actions.FirstOrDefault(x => x.ActionType == TaskActionType.Execute) is not ExecAction execAction)
         {
-            definition.Actions.Add(new ExecAction(path, "--headless"));
+            definition.Actions.Add(new ExecAction(path, LaunchArgs.Keys.HEADLESS_KEY));
             task.RegisterChanges();
             return;
         }
@@ -100,9 +99,9 @@ internal static class TooltipTaskScheduler
     {
         try
         {
-            var isAdmin = IsAdmin();
+            var isAdmin = LaunchArgs.IsAdmin();
             using var taskDefinition = TaskService.NewTask();
-            taskDefinition.Actions.Add(new ExecAction(Environment.ProcessPath!, "--headless"));
+            taskDefinition.Actions.Add(new ExecAction(Environment.ProcessPath!, LaunchArgs.Keys.HEADLESS_KEY));
             taskDefinition.Principal.RunLevel = isAdmin ? TaskRunLevel.Highest : TaskRunLevel.LUA;
             var userId = WindowsIdentity.GetCurrent().Name;
             taskDefinition.Triggers.Add(new LogonTrigger
