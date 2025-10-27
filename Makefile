@@ -8,7 +8,7 @@ install_velopack:
 	dotnet tool update -g vpk
 
 velopack: install_velopack clean build
-	vpk pack -u 'Win11TooltipFix' -v '$(VERSION)' -e 'TooltipFix.exe' -o 'velopack' --packTitle 'Windows 11 Tooltip Fix' -p 'bin' --shortcuts 'StartMenuRoot' --framework net9-x64-desktop
+	vpk pack -u 'Tooltip_Fix' -v '$(VERSION)' -e 'TooltipFix.exe' -o 'velopack' --packTitle 'Windows 11 Tooltip Fix' -p 'bin' --shortcuts 'StartMenuRoot' --framework net9-x64-desktop
 
 clean:
 	-rm -Recurse -ErrorAction SilentlyContinue bin
