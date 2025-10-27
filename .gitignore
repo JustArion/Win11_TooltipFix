@@ -39,6 +39,7 @@ bld/
 [Oo]bj/
 [Ll]og/
 [Ll]ogs/
+[Vv]elopack/
 
 # Visual Studio 2015/2017 cache/options directory
 .vs/
@@ -97,7 +98,6 @@ StyleCopReport.xml
 *.tmp
 *.tmp_proj
 *_wpftmp.csproj
-*.log
 *.tlog
 *.vspscc
 *.vssscc
@@ -404,4 +404,3 @@ FodyWeavers.xsd
 
 # JetBrains Rider
 *.sln.iml
-src/Output/*
