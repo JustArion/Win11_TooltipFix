@@ -73,7 +73,7 @@ jobs:
             ls ./velopack/ | ForEach-Object { 
             $file = $_.FullName
 
-            if ($file.Contains("Portable"))
+            if (-not $file.Contains("Setup"))
             {
                 return
             }
