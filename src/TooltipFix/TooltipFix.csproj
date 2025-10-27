@@ -38,5 +38,6 @@
         <PackageReference Include="Serilog.Sinks.Seq" Version="9.0.0" />
         <PackageReference Include="TaskScheduler" Version="2.12.2" />
         <PackageReference Include="Vanara.PInvoke.User32" Version="4.1.6" />
+        <PackageReference Include="Velopack" Version="0.0.1298" />
     </ItemGroup>
 </Project>
