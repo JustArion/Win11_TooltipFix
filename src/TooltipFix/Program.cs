@@ -208,7 +208,7 @@ internal static class Program
     private static HWINEVENTHOOK InitializeOnPID(uint pid) =>
         SetWinEventHook(EventConstants.EVENT_OBJECT_SHOW,
             EventConstants.EVENT_OBJECT_SHOW, 
-            nint.Zero, 
+            0, 
             _winEventCallback!, pid, 0,
             WINEVENT.WINEVENT_OUTOFCONTEXT);
 
@@ -271,7 +271,7 @@ internal static class Program
             if (popup is null)
                 return false;
 
-            //                                Xaml_WindowedPopupClass         PopupHost                   Popup                       Popup
+            //           Xaml_WindowedPopupClass         PopupHost                   Popup                       Popup
             Log.Debug("'{CurrentElementClassName}' - '{CurrentElementName}' - '{CurrentPopupClassName}' - '{CurrentPopupName}'", 
                 element.CurrentClassName, element.CurrentName, popup.CurrentClassName, popup.CurrentName);
             
@@ -316,18 +316,23 @@ internal static class Program
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static bool IsTransparent(WindowStylesEx style) => style.HasFlag(WindowStylesEx.WS_EX_TRANSPARENT | WindowStylesEx.WS_EX_LAYERED);
 
+    private static readonly int[] _ignorableHRESULTS = 
+    [
+        // https://learn.microsoft.com/en-us/windows/win32/debug/system-error-codes--1300-1699-
+        // (1400) INVALID_WINDOW_HANDLE
+        0x578, // The window was closed before we can set its style, this is fine to ignore then 
+    ];
     [MethodImpl(MethodImplOptions.AggressiveInlining | MethodImplOptions.AggressiveOptimization)]
     private static void SetTransparent(HWND hwnd, WindowStylesEx style)
     {
-
         style |= WindowStylesEx.WS_EX_TRANSPARENT | WindowStylesEx.WS_EX_LAYERED;
         
         var retVal = SetWindowLong(hwnd, WindowLongFlags.GWL_EXSTYLE, (int)style);
         var lastError = GetLastError();
         
-        if (retVal != 0 && lastError.Succeeded) 
+        if ((retVal != 0 && lastError.Succeeded) || _ignorableHRESULTS.Contains(lastError.ToHRESULT().Code)) 
             return;
-
+        
         Log.Error(lastError.GetException(), "Error setting window style");
     }
 
